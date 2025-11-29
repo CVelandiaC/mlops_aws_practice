@@ -1,51 +1,64 @@
-# --- Base image with Python ---
+# ================================
+# Base image with Python
+# ================================
 FROM python:3.10-slim AS base
 
-# --- Install uv package manager ---
+# Install uv package manager
 RUN pip install --no-cache-dir uv
 
-# --- Create working directory ---
+# Create working directory
 WORKDIR /app
+RUN mkdir -p /app
 
-# --- Install system dependencies ---
+# ================================
+# Install system dependencies
+# ================================
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     unzip \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# --- Install AWS CLI v2 ---
+# ================================
+# Install AWS CLI v2
+# ================================
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
  && unzip awscliv2.zip \
  && ./aws/install \
  && rm -rf awscliv2.zip aws/
 
-# --- Copy dependency files ---
-COPY pyproject.toml ./ 
-COPY uv.lock ./   # remove if not using lock file
+# ================================
+# Copy dependency files from repo root
+# IMPORTANT: .. because Dockerfile is inside /docker/
+# ================================
+COPY pyproject.toml /app/
+COPY uv.lock /app/
 
-# --- Install dependencies using uv ---
+# Install project dependencies
 RUN uv sync --no-dev
 
-# --- Copy application source code ---
-COPY src ./src
+# ================================
+# Copy application source code
+# ================================
+COPY ../src /app/src
 
-# ===================================================================
-# --- SAFE ENV VARIABLES --------------------------------------------
-# ===================================================================
-# NOTE: These are only *defaults*. Real secrets will come from:
-# - GitHub Actions (docker run -e ...)
-# - EC2 Instance Role (best practice)
-# - SSM Parameter Store (optional)
-# - Your own .env in development
-
+# ================================
+# Safe defaults for environment vars
+# Real secrets will be injected at runtime
+# ================================
 ENV AWS_DEFAULT_REGION="us-east-2"
 ENV S3_BUCKET="my-s3-bucket"
 
-# DO NOT set AWS keys in Dockerfile. They will be passed at runtime.
+# IMPORTANT:
+# Do NOT set AWS keys here.
+# EC2 Instance Role or GitHub Actions runtime envs should provide them.
 
-# --- Expose FastAPI port ---
+# ================================
+# Expose FastAPI Port
+# ================================
 EXPOSE 80
 
-# --- Start FastAPI using uv + uvicorn ---
+# ================================
+# Run FastAPI via uv + uvicorn
+# ================================
 CMD ["uv", "run", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "80"]
