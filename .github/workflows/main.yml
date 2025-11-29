@@ -1,0 +1,17 @@
+name: Test Secrets
+
+on: workflow_dispatch   # Manual run button
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read secrets
+        run: |
+          echo "AWS ACCESS KEY ID: ${{ secrets.AWS_ACCESS_KEY_ID }}"
+          echo "AWS REGION: ${{ secrets.AWS_REGION }}"
+          echo "ECR REGISTRY: ${{ secrets.AWS_ECR_REGISTRY }}"
+          echo "EC2 KEY LENGTH: ${#EC2_SSH_KEY}"
+
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
