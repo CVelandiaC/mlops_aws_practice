@@ -1,35 +1,38 @@
 name: CI/CD – Build, Push to ECR, Deploy to EC2
 
 # -------------------------------------------------------------
-# Trigger workflow: ONLY when a Pull Request is merged into main
-# Docs: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#push
+# Trigger workflow WHEN a Pull Request into main is CLOSED
+# AND is actually MERGED.
+# Docs: https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request
 # -------------------------------------------------------------
 on:
-  push:
+  pull_request:
     branches:
       - main
     types:
-      - merged
+      - closed
 
 jobs:
   # ============================================================
-  # JOB 1: BUILD AND PUSH DOCKER IMAGE TO AMAZON ECR
-  # Docs: https://docs.aws.amazon.com/AmazonECR/latest/userguide/docker-push-ecr-image.html
+  # JOB 1: BUILD AND PUSH IMAGE TO ECR
   # ============================================================
   build-and-push:
     name: Build & Push Docker Image to ECR
     runs-on: ubuntu-latest
 
+    # Only run if the PR was merged (not just closed)
+    if: github.event.pull_request.merged == true
+
     steps:
       # ---------------------------------------------------------
-      # Step 1: Checkout repository source code
+      # Step 1: Checkout source code
       # Docs: https://github.com/actions/checkout
       # ---------------------------------------------------------
       - name: Checkout code
         uses: actions/checkout@v3
 
       # ---------------------------------------------------------
-      # Step 2: Authenticate GitHub Actions to AWS using secrets
+      # Step 2: Configure AWS credentials
       # Docs: https://github.com/aws-actions/configure-aws-credentials
       # ---------------------------------------------------------
       - name: Configure AWS credentials
@@ -40,7 +43,7 @@ jobs:
           aws-region: ${{ secrets.AWS_REGION }}
 
       # ---------------------------------------------------------
-      # Step 3: Log in to Amazon ECR (Docker login)
+      # Step 3: Login to ECR
       # Docs: https://github.com/aws-actions/amazon-ecr-login
       # ---------------------------------------------------------
       - name: Login to Amazon ECR
@@ -48,9 +51,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       # ---------------------------------------------------------
-      # Step 4: Build, tag, and push your Docker image to ECR
-      # Docker build docs: https://docs.docker.com/engine/reference/commandline/build/
-      # Docker push docs: https://docs.docker.com/engine/reference/commandline/push/
+      # Step 4: Build and push Docker image to ECR
       # ---------------------------------------------------------
       - name: Build, tag, and push Docker image
         env:
@@ -66,32 +67,32 @@ jobs:
           echo "Pushing image to ECR..."
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
+
   # ============================================================
   # JOB 2: DEPLOY TO EC2 USING SSH
   # ============================================================
   deploy-to-ec2:
     name: Deploy to EC2
-    needs: build-and-push   # Wait until image is pushed
+    needs: build-and-push
     runs-on: ubuntu-latest
+
+    # Only run if PR was merged
+    if: github.event.pull_request.merged == true
 
     steps:
       # ---------------------------------------------------------
-      # Step 1: Connect to EC2 using SSH
+      # Connect to EC2 with SSH and deploy new Docker image
       # Docs: https://github.com/appleboy/ssh-action
       # ---------------------------------------------------------
       - name: SSH into EC2 and deploy container
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_PUBLIC_IP }}
-          username: ec2-user                # Amazon Linux default user
-          key: ${{ secrets.EC2_SSH_KEY }}   # Your private SSH key
+          username: ec2-user               # default for Amazon Linux
+          key: ${{ secrets.EC2_SSH_KEY }}  # private SSH key
           port: 22
           script: |
-            echo "Logging into ECR from EC2..."
-            # ---------------------------------------------------
-            # EC2 uses its IAM role to login — no secrets needed
-            # Docs: https://docs.aws.amazon.com/AmazonECR/latest/userguide/registry_auth.html
-            # ---------------------------------------------------
+            echo "Logging into ECR from EC2 (IAM role handles auth)..."
             aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
               | sudo docker login --username AWS --password-stdin ${{ secrets.AWS_ECR_REGISTRY }}
 
@@ -99,11 +100,11 @@ jobs:
             sudo docker stop mlapi || true
             sudo docker rm mlapi || true
 
-            echo "Pulling latest container from ECR..."
+            echo "Pulling latest image..."
             sudo docker pull ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_REPOSITORY }}:latest
 
-            echo "Starting new container on port 80..."
-            # Port 80 must be open in EC2 security group
-            sudo docker run -d --name mlapi -p 80:80 ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_REPOSITORY }}:latest
+            echo "Starting new container..."
+            sudo docker run -d --name mlapi -p 80:80 \
+              ${{ secrets.AWS_ECR_REGISTRY }}/${{ secrets.AWS_ECR_REPOSITORY }}:latest
 
-            echo "Deployment completed successfully!"
+            echo "Deployment complete!"
