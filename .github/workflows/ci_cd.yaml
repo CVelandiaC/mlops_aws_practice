@@ -88,7 +88,7 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_PUBLIC_IP }}
-          username: ec2-user               # default for Amazon Linux
+          username: ubuntu               # default for Amazon Linux
           key: ${{ secrets.EC2_SSH_KEY }}  # private SSH key
           port: 22
           script: |
