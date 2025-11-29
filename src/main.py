@@ -40,7 +40,7 @@ def hello_world():
 
     FastAPI automatically converts the returned dictionary into JSON.
     """
-    return {"message": "Hello World! te enpoint was deployed successfully"}
+    return {"message": "Hello World! the endpoint was deployed successfully"}
 
 
 # -----------------------------------------------------
